@@ -129,8 +129,9 @@ def get_filtered_stream_data(stream: TDTStream, time_ranges: np.ndarray) -> List
     # the sample where the data starts, as start_time is in seconds
     td_sample = np.uint64(stream.header.start_time[0]/2.56e-6)
     filtered = []
+    stream_data = np.array(stream.data)
     # the number of samples in the data
-    max_ind = max(stream.data.shape)
+    max_ind = max(stream_data.shape)
     _time_ranges = copy.deepcopy(time_ranges)
 
     for j in range(_time_ranges.shape[1]):
@@ -143,11 +144,11 @@ def get_filtered_stream_data(stream: TDTStream, time_ranges: np.ndarray) -> List
         if np.isinf(_time_ranges[1,j]):
             if onset <= max_ind and onset > -1:
                 # if the data is 1d (i.e. a single channel)
-                if stream.data.ndim == 1:
-                    filtered.append(stream.data[onset:])
+                if stream_data.ndim == 1:
+                    filtered.append(stream_data[onset:])
                 else: 
                     # if the data is 2d (i.e. multiple channels)
-                    filtered.append(stream.data[:,onset:])
+                    filtered.append(stream_data[:,onset:])
                     break
         # Normal case
         else:
@@ -155,9 +156,9 @@ def get_filtered_stream_data(stream: TDTStream, time_ranges: np.ndarray) -> List
             offset = np.uint64(np.maximum(np.round((thi_sample-td_sample)/sf),0))
             
             if offset <= max_ind and offset > -1 and onset <= max_ind and onset > -1:
-                if stream.data.ndim == 1:
-                    filtered.append(stream.data[onset:offset])
+                if stream_data.ndim == 1:
+                    filtered.append(stream_data[onset:offset])
                 else:
-                    filtered.append(stream.data[:,onset:offset])
+                    filtered.append(stream_data[:,onset:offset])
     return filtered
 

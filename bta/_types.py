@@ -111,6 +111,15 @@ class EventHeader(BaseModel):
     type_str: AllowedEvtypes = AllowedEvtypes.EPOCS
     size: int = 0
 
+    def __repr__(self):
+        return f"""
+name: {self.name}
+type: {self.type}
+start_time: {self.start_time}
+type_str: {self.type_str}
+size: {self.size}
+"""
+
 class TDTNote(BaseModel):
     name: List = []
     index: List = []
@@ -134,8 +143,11 @@ class Event(BaseModel):
         arbitrary_types_allowed = True
 
     def __repr__(self):
-        return f"""{self.header.name}:
-        type: {self.header.type_str}
+        return str(self.header) + f"""
+ts: {self.ts}
+data: {self.data}
+code: {self.code}
+dform: {self.dform}
     """
 
     def __str__(self):
@@ -146,6 +158,13 @@ class TDTEpoc(Event):
     onset: np.ndarray = np.array([])
     offset: np.ndarray = np.array([])
     notes: List[TDTNote] = []
+
+    def __repr__(self):
+        super().__repr__()
+        return str(self.header) + f"""
+onset: {self.onset}
+offset: {self.offset}
+    """
 
 class TDTSnip(Event):
     fs: np.double = 0.0
@@ -203,27 +222,35 @@ class TDTData(BaseModel):
     def __repr__(self):
         res = []
         if self.epocs:
-            x = "\nEpocs:\n"
-            for e in self.epocs:
-                x += "\t" + e.header.name + "\n"
-            x = x[:-1]
+            for idx, e in enumerate(self.epocs):
+                if idx == 0:
+                   x = f"Epocs:   {e.header.name}\n"
+                else:
+                    x += f"         {e.header.name}\n"
+            # remove the last newline from the string
+            x = x.split("\n")[:-1]
+            x = "\n".join(x)
             res.append(x)
         if self.snips:
-            x = "\nSnips:\n"
-            for s in self.snips:
-                x += "\t" + s.header.name + "\n"
+            for idx, s in enumerate(self.snips):
+                if idx == 0:
+                    x = f"Snips:  {s.header.name}\n"
+                else: x += f"         {s.header.name}\n"
             x = x[:-1]
             res.append(x)
         if self.streams:
-            x = "\nStreams:\n"
-            for s in self.streams:
-                x +=  "\t" + s.header.name + "\n"
+
+            for idx, s in enumerate(self.streams):
+                if idx == 0:
+                    x = f"Streams: {s.header.name}\n"
+                else: x += f"         {s.header.name}\n"
             x = x[:-1]
             res.append(x)
         if self.scalars:
-            x = "\nScalars:\n"
-            for s in self.scalars:
-                x += "\t" +  s.header.name + "\n"
+            for idx, s in enumerate(self.scalars):
+                if idx == 0:
+                    x = f"Scalars: {s.header.name}\n"
+                else: x += f"         {s.header.name}\n"
             x = x[:-1]
             res.append(x)
 

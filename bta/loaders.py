@@ -15,17 +15,6 @@ logger = logging.getLogger(__name__)
 
 MAX_UINT64 = np.iinfo(np.uint64).max
 
-def fix_var_name(var_str: str):
-    # variable must start with letter, number, or underscore
-    valid = var_str[0].isalnum() or var_str[0] == '_'
-    if not valid:
-        var_str = 'x' + var_str
-    # replace disallowed characters with an underscore
-    fixed_name = re.sub('\W|^(?=\d)', '_', var_str)
-    if fixed_name != var_str:
-        logger.debug('info: {0} is not a valid Python variable name, changing to {1}'.format(var_str, fixed_name))
-    return fixed_name
-
 def time2sample(ts: float, fs: float = 195312.5, t1: bool = False, t2: bool = False, to_time: bool = False) -> np.uint64:
     """
     Convert time in seconds to sample index.
@@ -876,7 +865,7 @@ def read_block(
                     if store_code["name"] not in speecify_store_names:
                         skip_by_name = True
 
-                store_code["var_name"] = fix_var_name(store_code["name"])
+                store_code["var_name"] = store_code["name"]
                 var_name = store_code["var_name"]
                 temp = heads[3, valid_ind].view(np.uint16)
 
@@ -903,7 +892,7 @@ def read_block(
                         if skip_by_name:
                             continue
                         curr_epoc = TDTEpoc()
-                        curr_epoc.header.name = fix_var_name(store_code["name"])
+                        curr_epoc.header.name = store_code["name"]
                         curr_epoc.buddy = buddy
                         curr_epoc.code = store_code["code"]
                         curr_epoc.header.type = store_code["epoc_type"]
@@ -933,7 +922,7 @@ def read_block(
                             curr_epoc.offset = np.append(curr_epoc.ts[1:], np.inf)
 
                         if curr_epoc.header.type == "offset":
-                            var_name = fix_var_name(curr_epoc.buddy)
+                            var_name = curr_epoc.buddy
                             if var_name not in [x.header.name for x in data.epocs]:
                                 warnings.warn(f"Offset buddy `{var_name}` not found", Warning, stacklevel=2)
                                 continue
@@ -1048,7 +1037,6 @@ def read_block(
                         else:
                             curr_snip.sortcode.append(temp[1::2])
                             curr_snip.sortname = "TankSort"
-
                         curr_snip.sortcode = np.concatenate(curr_snip.sortcode)
                         data.snips.append(curr_snip)
                 elif store_code["type_str"] == "scalars":
@@ -1078,8 +1066,9 @@ def read_block(
                         #     curr_scalar.notes.append(note)
                         curr_scalar.ts = np.append(curr_scalar.ts, time2sample((np.reshape(heads[[[4], [5]], valid_ind].T, (-1, 1)).T.view(np.float64)- data.header.start_time), to_time=True))
                         if not nodata:
-                            curr_snip.data = np.append(curr_snip.data, np.reshape(heads[[[6], [7]], valid_ind].T, (-1, 1)).T.view(np.float64))
-                        curr_scalar.data = np.concatenate(curr_scalar.data, axis=1)[0]
+                            curr_scalar.data = np.append(curr_scalar.data, np.reshape(heads[[[6], [7]], valid_ind].T, (-1, 1)).T.view(np.float64))
+                        if len(curr_scalar.data.shape) > 1:
+                            curr_scalar.data = np.concatenate(curr_scalar.data, axis=1)[0]
                         curr_scalar.chan.append(temp[::2])
                         curr_scalar.chan = np.concatenate(curr_scalar.chan)
                         if np.max(curr_scalar.chan) == 1:
@@ -1121,13 +1110,13 @@ def read_block(
         if len(block_notes) > 0:
             for epoc in data.epocs:
                 if epoc.header.type == "onset":
-                    var_name = fix_var_name(epoc.header.name)
+                    var_name = epoc.header.name
                     epoc_of_intrest = get_event_data_by_name(var_name, "epocs")
                     for store in block_notes.values():
                         if store.StoreName == epoc_of_intrest.header.name:
                             head_name = store.HeadName
                             if "|" in head_name:
-                                primary = fix_var_name(head_name[-4:])
+                                primary = head_name[-4:]
                                 if primary in [x.header.name for x in data.epocs]:
                                     epoc_of_intrest.offset = get_event_data_by_name(primary, "epocs").offset
 
@@ -1174,10 +1163,6 @@ def read_block(
     for stream in data.streams:
         start_time, filtered_data, filtered_ts, filtered_chan, filtered_sort_code, filtered_onset, filtered_offset = _time_filter(event=stream, valid_time_range=valid_time_range, num_ranges=num_ranges)
         stream.data = filtered_data
-        types = [type(x) == type(np.array([])) for x in filtered_data]
-        # if there is a false in types
-        if False in types:
-            raise ValueError(f"Data types are not consistent: {types}")
         stream.ts = filtered_ts
         stream.chan = filtered_chan
     for scalar in data.scalars:
@@ -1241,7 +1226,7 @@ def read_block(
 
     for snip in data.snips:
             # data[current_type_str][current_name].name = current_name
-            # data[current_type_str][current_name].fs = current_freq
+            # data[current_type_str][current_name].fs = stream.fs
 
             all_ch = set(snip.chan)
 
@@ -1371,7 +1356,7 @@ def read_block(
 
     for stream in data.streams:
         # data[current_type_str][current_name].name = current_name
-        # data[current_type_str][current_name].fs = current_freq
+        # data[current_type_str][current_name].fs = stream.fs
         sz = np.uint64(np.dtype(stream.dform).itemsize)
         # make sure SEV files are there if they are supposed to be
         if stream.ucf == 1:
@@ -1383,6 +1368,7 @@ def read_block(
             )
             continue
 
+        filtered_data = stream.data
         stream.data = [
             [] for i in range(num_ranges)
         ]
@@ -1403,7 +1389,7 @@ def read_block(
             if len(fc) == 1:
                 # there is only one channel here, use them all
                 valid_ind = np.arange(
-                    len(stream.data[jj])
+                    len(filtered_data[jj])
                 )
                 nchan = np.uint64(1)
             elif len(channels) == 1:
@@ -1421,9 +1407,9 @@ def read_block(
                 valid_ind = [i for i, x in enumerate(fc) if x in channels]
                 fc = fc[valid_ind]
                 nchan = np.uint64(len(list(set(fc))))
-            print(f"{stream.header.name} - {type(valid_ind)} - {type(jj)} - {type(stream.data[jj])}")
+            logger.info(f"Reading {nchan} channels from {stream.header.name}")
             chan_index = np.zeros(nchan, dtype=np.uint64)
-            these_offsets = np.array(stream.data[jj])[valid_ind]
+            these_offsets = np.array(filtered_data[jj])[valid_ind]
 
             # preallocate data array
             npts = (stream.header.size - np.uint32(10)) * np.uint32(4) // sz
@@ -1454,73 +1440,72 @@ def read_block(
             channel_offset = 0
             for f in range(len(arr)):
                 tev.seek(markers[f], os.SEEK_SET)
-
+                
                 # do big-ish read
                 if f == len(arr) - 1:
                     read_size = (these_offsets[-1] - markers[f]) // sz + npts
                 else:
-                    read_size = (markers[f + 1] - markers[f]) // sz + npts
-
-                tev_data = np.frombuffer(
-                    tev.read(read_size * sz), stream.dform
-                )
-
+                    read_size = (markers[f+1] - markers[f]) // sz + npts
+                
+                tev_data = np.frombuffer(tev.read(read_size * sz), stream.dform)
+                
                 # we are covering these offsets
                 start = arr[f]
-                stop = min(arr[f] + iter, len(these_offsets))
+                stop = min(arr[f]+iter, len(these_offsets))
                 xxx = these_offsets[start:stop]
-
+            
                 # convert offsets from bytes to indices in data array
-                relative_offsets = ((xxx - min(xxx)) / sz)[np.newaxis].T
-                ind = relative_offsets + np.tile(
-                    range(npts), [len(relative_offsets), 1]
-                )
-
+                relative_offsets = ((xxx - min(xxx))/sz)[np.newaxis].T
+                ind = relative_offsets + np.tile(range(npts), [len(relative_offsets), 1])
+                
                 # loop through values, filling array
+                found_empty = False
                 for kk in range(len(relative_offsets)):
                     if nchan > 1:
                         arr_index = channels.index(fc[channel_offset])
                     else:
                         arr_index = 0
                     channel_offset += 1
-                    if not np.any(ind[kk, :] <= len(tev_data)):
+                    if not np.any(ind[kk,:] <= len(tev_data)):
+                        if not found_empty:
+                            warnings.warn(f'Data missing from tev file for store {stream.header.name} time {stream.ts[jj][kk]}s', Warning)
+                            found_empty = True
                         chan_index[arr_index] += npts
                         continue
-                    stream.data[jj][arr_index,chan_index[arr_index] : (chan_index[arr_index] + npts),] = tev_data[ind[kk, :].latten().astype(np.uint64)]
+                    found_empty = False
+
+                    stream.data[jj][arr_index, chan_index[arr_index]:(chan_index[arr_index] + npts)] = tev_data[ind[kk,:].flatten().astype(np.uint64)]
                     chan_index[arr_index] += npts
+
+            # add data to big cell array
+            # convert cell array for output
+            # be more exact with streams time range filter.
+            # keep timestamps >= valid_time_range(1) and < valid_time_range(2)
+            # index 1 is at header.stores.(current_name).start_time
+            # round timestamps to the nearest sample
+            
+            # actual time the segment starts on
+            td_time = time2sample(stream.header.start_time[jj], stream.fs, to_time=True)
+            tdSample = time2sample(td_time, stream.fs, t1=1)
+            ltSample = time2sample(valid_time_range[0,jj], stream.fs, t1=1)
+            minSample = ltSample - tdSample
+            if np.isinf(valid_time_range[1,jj]):
+                maxSample = MAX_UINT64
             else:
-                # add data to big cell array
-                # convert cell array for output
-                # be more exact with streams time range filter.
-                # keep timestamps >= valid_time_range(1) and < valid_time_range(2)
-                # index 1 is at header.stores.(current_name).start_time
-                # round timestamps to the nearest sample
-
-                # actual time the segment starts on
-                td_time = time2sample(
-                    stream.header.start_time[jj],stream.fs,to_time=True,)
-                tdSample = time2sample(td_time, stream.fs, t1=1)
-                ltSample = time2sample(
-                    valid_time_range[0, jj], stream.fs, t1=1
-                )
-                minSample = ltSample - tdSample
-                if np.isinf(valid_time_range[1, jj]):
-                    maxSample = MAX_UINT64
-                else:
-                    etSample = time2sample(
-                        valid_time_range[1, jj], stream.fs, t1=1
-                    )
-                    maxSample = etSample - tdSample - 1
-                stream.data[jj] = stream.data[jj][:, minSample : int(maxSample + 1)]
-                stream.header.start_time[jj] = (ltSample / stream.fs)
-
+                etSample = time2sample(valid_time_range[1,jj], stream.fs, t1=1)
+                maxSample = etSample - tdSample - 1
+            stream.data[jj] = stream.data[jj][:,minSample:int(maxSample+1)]
+            stream.header.start_time[jj] = ltSample / stream.fs
+    
         stream.chan = channels
-        if len(stream.data) == 1:
-            stream.data = stream.data[0]
-            if len(stream.data) > 0:
-                if stream.data.shape[0] == 1:
-                    stream.data = stream.data[0]
-            stream.header.start_time = stream.header.start_time[0]
+
+    if len(stream.data) == 1:
+        stream.data = stream.data[0]
+        if len(stream.data) > 0:
+            if stream.data.shape[0] == 1:
+                stream.data = stream.data[0]
+        stream.header.start_time = stream.header.start_time[0]
+    stream.data = np.array(stream.data)
 
     if not use_outside_headers:
         try:
